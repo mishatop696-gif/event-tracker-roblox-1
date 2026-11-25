@@ -2,6 +2,7 @@
 import os
 import asyncio
 import logging
+from html import escape
 
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart
@@ -10,6 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from database import init_db, save_user, get_latest
+from members import get_members, get_all_members
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,7 +34,6 @@ menu = ReplyKeyboardMarkup(
             KeyboardButton(text="⭐ Video Star")
         ],
         [
-            KeyboardButton(text="🛠️ Developers"),
             KeyboardButton(text="🔔 Уведомления")
         ]
     ],
@@ -47,21 +48,79 @@ async def start(message: Message):
 
     await message.answer(
         "🌈 <b>Roblox Event Tracker</b>\n\n"
-        "Добро пожаловать!\n"
-        "Выбери раздел в меню.",
+        "Добро пожаловать!\n\n"
+        "Выбери нужный раздел:",
         reply_markup=menu
     )
 
 
 @router.message(F.text == "📊 Статус")
 async def status(message: Message):
+    counts = get_all_members()
+
     await message.answer(
         "📊 <b>Статус мониторинга</b>\n\n"
-        "🔵 Admin: ожидает подключение\n"
-        "⭐ Video Star: ожидает подключение\n"
-        "🛠️ Developers: ожидает подключение\n"
-        "🎮 Events: ожидает подключение"
+        f"🔵 Roblox Admin: {counts['admin']} аккаунтов\n"
+        f"⭐ Video Star: {counts['video_star']} аккаунтов\n\n"
+        "🛠️ Developers: отключены\n"
+        "🎮 Мониторинг событий: готовится\n\n"
+        "ℹ️ Автоматический сбор участников "
+        "ещё не подключён."
     )
+
+
+@router.message(F.text == "🔵 Admin")
+async def admin(message: Message):
+    members = get_members("admin")
+
+    if not members:
+        await message.answer(
+            "🔵 <b>Roblox Admin</b>\n\n"
+            "Список пока пуст.\n"
+            "Аккаунты появятся после подключения "
+            "доступных источников."
+        )
+        return
+
+    result = "🔵 <b>Roblox Admin</b>\n\n"
+
+    for member in members[:25]:
+        username = escape(str(member["username"]))
+        user_id = member["user_id"]
+
+        result += (
+            f"👤 @{username}\n"
+            f"🆔 {user_id}\n\n"
+        )
+
+    await message.answer(result)
+
+
+@router.message(F.text == "⭐ Video Star")
+async def video_star(message: Message):
+    members = get_members("video_star")
+
+    if not members:
+        await message.answer(
+            "⭐ <b>Roblox Video Stars</b>\n\n"
+            "Список пока пуст.\n"
+            "Аккаунты появятся после подключения "
+            "доступных источников."
+        )
+        return
+
+    result = "⭐ <b>Roblox Video Stars</b>\n\n"
+
+    for member in members[:25]:
+        username = escape(str(member["username"]))
+        user_id = member["user_id"]
+
+        result += (
+            f"👤 @{username}\n"
+            f"🆔 {user_id}\n\n"
+        )
+
+    await message.answer(result)
 
 
 @router.message(F.text == "🕒 Последние")
@@ -79,21 +138,21 @@ async def latest(message: Message):
 
     for category, username, event, url, date in records:
         result += (
-            f"📌 {category}\n"
-            f"👤 {username}\n"
-            f"🎮 {event or 'Не указано'}\n"
-            f"🕒 {date}\n"
-            f"{url or ''}\n\n"
+            f"📌 {escape(str(category))}\n"
+            f"👤 {escape(str(username))}\n"
+            f"🎮 {escape(str(event or 'Не указано'))}\n"
+            f"🕒 {escape(str(date))}\n\n"
         )
 
-    await message.answer(result)
+    await message.answer(result[:4000])
 
 
 @router.message(F.text == "🎮 В событии")
 async def events(message: Message):
     await message.answer(
-        "🎮 <b>Активные события</b>\n\n"
-        "Источники мониторинга ещё подключаются."
+        "🎮 <b>Roblox Events</b>\n\n"
+        "Автоматическое обнаружение событий "
+        "пока разрабатывается."
     )
 
 
@@ -101,33 +160,27 @@ async def events(message: Message):
 async def settings(message: Message):
     await message.answer(
         "⚙️ <b>Настройки</b>\n\n"
-        "Настройка категорий мониторинга скоро появится."
+        "🔵 Roblox Admin — выбран\n"
+        "⭐ Video Star — выбран\n"
+        "🛠️ Developers — отключены\n\n"
+        "Настройки уведомлений будут подключены "
+        "следующим этапом."
     )
-
-
-@router.message(F.text == "🔵 Admin")
-async def admin(message: Message):
-    await message.answer("🔵 Мониторинг Roblox Admin готовится.")
-
-
-@router.message(F.text == "⭐ Video Star")
-async def video_star(message: Message):
-    await message.answer("⭐ Мониторинг Video Star готовится.")
-
-
-@router.message(F.text == "🛠️ Developers")
-async def developers(message: Message):
-    await message.answer("🛠️ Мониторинг разработчиков готовится.")
 
 
 @router.message(F.text == "🔔 Уведомления")
 async def notifications(message: Message):
-    await message.answer("🔔 Настройки уведомлений готовятся.")
+    await message.answer(
+        "🔔 <b>Уведомления</b>\n\n"
+        "Система уведомлений пока готовится."
+    )
 
 
 async def main():
     if not TOKEN:
-        raise RuntimeError("BOT_TOKEN is not configured")
+        raise RuntimeError(
+            "BOT_TOKEN is not configured"
+        )
 
     init_db()
 
@@ -141,9 +194,11 @@ async def main():
     dp = Dispatcher()
     dp.include_router(router)
 
+    logging.info("Roblox Event Tracker started")
+
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-        
+    

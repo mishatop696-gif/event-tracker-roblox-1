@@ -1,16 +1,12 @@
 
 import asyncio
 import logging
+
 from database import add_detection
+from sources import SOURCES, CATEGORIES
 
 logger = logging.getLogger(__name__)
 
-CATEGORIES = [
-    "Admin",
-    "Video Star",
-    "Developers",
-    "Events"
-]
 
 class RobloxTracker:
     def __init__(self):
@@ -28,9 +24,17 @@ class RobloxTracker:
         if not self.running:
             return
 
-        # Здесь будет подключение к проверенным
-        # источникам данных Roblox.
-        logger.info("Checking Roblox sources")
+        for key, source in SOURCES.items():
+            if not source.get("enabled", False):
+                continue
+
+            logger.info(
+                "Source ready: %s",
+                source["name"]
+            )
+
+        # Получение реальных обнаружений
+        # подключим следующим этапом.
 
     async def run(self):
         await self.start()
@@ -54,9 +58,9 @@ class RobloxTracker:
             raise ValueError("Unknown category")
 
         add_detection(
-            category,
+            CATEGORIES[category],
             username,
             event_name,
             game_url
         )
-      
+        

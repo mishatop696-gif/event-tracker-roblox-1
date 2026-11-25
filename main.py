@@ -2,11 +2,20 @@
 import os
 import asyncio
 import logging
+import secrets
+import hmac
 from html import escape
+
+from aiohttp import web
 
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import (
+    Message,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    Update
+)
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
@@ -16,6 +25,10 @@ from members import get_members, get_all_members
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("BOT_TOKEN")
+HOST = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or secrets.token_urlsafe(32)
+
+WEBHOOK_PATH = "/webhook"
 
 router = Router()
 
@@ -178,8 +191,11 @@ async def notifications(message: Message):
 
 async def main():
     if not TOKEN:
+        raise RuntimeError("BOT_TOKEN is not configured")
+
+    if not HOST:
         raise RuntimeError(
-            "BOT_TOKEN is not configured"
+            "RENDER_EXTERNAL_HOSTNAME is not configured"
         )
 
     init_db()
@@ -194,9 +210,59 @@ async def main():
     dp = Dispatcher()
     dp.include_router(router)
 
-    logging.info("Roblox Event Tracker started")
+    async def health(request):
+        return web.Response(text="Roblox Event Tracker is running")
 
-    await dp.start_polling(bot)
+    async def telegram_webhook(request):
+        received_secret = request.headers.get(
+            "X-Telegram-Bot-Api-Secret-Token", ""
+        )
+
+        if not hmac.compare_digest(
+            received_secret, WEBHOOK_SECRET
+        ):
+            raise web.HTTPUnauthorized()
+
+        try:
+            data = await request.json()
+            update = Update.model_validate(
+                data,
+                context={"bot": bot}
+            )
+            await dp.feed_update(bot, update)
+        except Exception:
+            logging.exception("Webhook update error")
+            raise web.HTTPBadRequest()
+
+        return web.Response(text="OK")
+
+    app = web.Application()
+    app.router.add_get("/", health)
+    app.router.add_post(WEBHOOK_PATH, telegram_webhook)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    port = int(os.getenv("PORT", "10000"))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+
+    try:
+        await site.start()
+
+        webhook_url = f"https://{HOST}{WEBHOOK_PATH}"
+
+        await bot.set_webhook(
+            url=webhook_url,
+            secret_token=WEBHOOK_SECRET
+        )
+
+        logging.info("Roblox Event Tracker webhook started")
+
+        await asyncio.Event().wait()
+
+    finally:
+        await runner.cleanup()
+        await bot.session.close()
 
 
 if __name__ == "__main__":
